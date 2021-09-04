@@ -1,0 +1,223 @@
+---
+title: 'RLab1 due on Sep 09 '
+author: "First Name, Last Name"
+date: "8/30/2021"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instructions
+You are expected to complete this homework in R by using this Rmarkdown file in RStudio environment.   Create a new folder in your computer and save this Rmarkdown file and the Data_RLab1.csv file in the same folder. 
+
+Submission instructions: Submit the Rmarkdown file and the html or pdf format of your knitted output. 
+
+
+0. *[2 points]* Write your full name in the "Author" part above and save as this Rmarkdown file by adding your initials to the end (i.e., RLab1_LB.Rmd) 
+```{r }
+#title: "RLab1 due on Sep 09 "
+#author: "Nitiphong, Nirachornkul"
+#date: "8/31/2021"
+#output: html_document
+```
+
+
+## Intro 
+
+In this Lab assignment, we will use data from the U.S. Dept. of Education College scorecard. Data is in csv file. We will import it to R format and name the dataset as schools by using the read.csv command, shown below, and in cases where any cell takes the value of "NULL" or "PrivacySuppressed", we will code them NA. 
+
+
+```{r }
+if (!require("knitr")) install.packages("knitr")
+library(knitr)
+schools <- read.csv("Data_RLab1.csv", na = c("NULL", "PrivacySuppressed"))
+
+```
+
+Data is messy. There are 7149 observations and 1778 variables.   
+
+For the sake of this lab assignment, we will only keep the following 6 variablest.  
+
+1. CONTROL - onwnership type (public, private - NP, private - P)
+2.C150_4 - Completion/graduation  rate
+3.PREDDEG - Predominat type of degree awarded
+4. SAT_AVG - average SAT score of students admitted
+5. UGDS - Enrollment of undergraduat certificate/degree-seeking students
+6.COSTT4_A - Average cost of attendance (academic year institutions)
+
+
+We will use the following code to keep only the above 6 variables and call the reduced dataset schools_subset. 
+
+```{r }
+library(knitr)
+library(dplyr)
+schools_subset  <- subset(schools, select =c(CONTROL,  C150_4, PREDDEG,SAT_AVG, UGDS, COSTT4_A))
+
+head(schools_subset)
+```
+
+
+# Prepare the Data 
+1. *[8 points]* Write an R code below to keep only predominantly bachelor's degree granting schools ($PREDDEG=='3'$). 
+
+
+```{r }
+library(dplyr)
+bachelor <- filter(schools, schools$PREDDEG=='3')
+
+```
+
+
+
+
+What are the dimensions of the filtered data (number of rows and columns)? *
+```{r}
+#number of rows : 2061
+#number of columns : 1778
+```
+
+
+2. *[10 points]*  How many missing values do we have for each variable in the filtered data set? Write an R code below to calculate the total number of missing values for each variable. 
+```{r}
+print("The total number of missing values for each variable ")
+for (var in 1:1778)
+{
+    summation <- (sum(is.na(schools[,var])))
+    name <- colnames(schools[var])
+    print(paste(name," = ",summation))
+}
+print(paste("The total NULL for all variable = ",sum(is.na(bachelor))))
+```
+
+3. *[10 points]*  Now, write an R code to drop observations when C150_4 variable has missing values.  
+What are the dimensions of the filtered data (number of rows and columns) after dropping the cases with missing values?    
+
+```{r }
+#C150_4 <- schools$C150_4 %>% na.omit()
+C150_4 <- filter(schools, schools$C150_4 != 'na')
+print(count(C150_4,'isnull'))
+
+#df [2,269 x 1,778]
+```
+
+
+4. *[10 points]*  Now, your task is to impute (replace) missing values in SAT_AVG and COSTT4_A with their median scores. 
+
+Write an R code below to impute the missing  SAT_AVG and COSTT4_A values with their corresponding median values. 
+
+When you calculate the median for each variable, ignore the NAs.  Write an R code what shows that you have zero missing values after the imputation. 
+
+
+```{r }
+median_SAT_AVG <- median(schools$SAT_AVG, na.rm = TRUE)
+schools$SAT_AVG[is.na(schools$SAT_AVG)] = median_SAT_AVG
+
+median_COSTT4_A <- median(schools[,177], na.rm = TRUE)
+schools$COSTT4_A[is.na(schools$COSTT4_A)] = median_COSTT4_A
+print(sum(is.na(schools$SAT_AVG)))
+print(sum(is.na(schools$COSTT4_A)))
+
+```
+
+
+5. *[10 points]*  Now, we will do some graphical analysis on the data. Before doing it, let's drop PREDDEG from the data set and rename some variables as follows:   
+Rename SAT_AVG to SAT
+
+Rename C150_4 to graduation_rate
+
+Rename UGDS to enrollment
+
+Rename COSTT4_A to cost
+
+Write an R code below to drop PREDDEG and rename the variables as indicated above. 
+
+```{r }
+#schools<- subset(schools, select = -PREDDEG)
+
+names(schools)[59] = 'SAT'
+
+variables <- as.integer(match("C150_4",names(schools)))
+names(schools)[variables] = 'graduation_rate'
+
+variables <- as.integer(match("UGDS",names(schools)))
+names(schools)[variables] = 'enrollment'
+
+variables <- as.integer(match("COSTT4_A",names(schools)))
+names(schools)[variables] = 'cost'
+
+```
+
+
+6. *[10 points]* 
+
+Now, write an R code to treat CONTROL variable as a factor 
+(currently, R treats CONTROL variable as an integer). 
+
+Then, Use the plot() function to produce side-by-side boxplots of
+cost versus CONTROL and  
+
+side-by-side boxplots of graduation_rate versus CONTROL. Do you see any pattern?
+
+ 
+```{r }
+library(ggplot2)
+
+ggplot(schools, aes(x =as.factor(CONTROL), y = schools$COST)) + geom_boxplot()
+ggplot(schools, aes(x =as.factor(CONTROL), y= graduation_rate)) + geom_boxplot()
+```
+7. *[10 points]* 
+Write and R code to detect and remove observations, if any, that lie outside the interquartile range for  enrollment, cost, graduation_rate and SAT variables  
+```{r }
+IQR(schools$enrollment, na.rm = TRUE)
+IQR(schools$cost, na.rm = TRUE)
+IQR(schools$graduation_rate, na.rm = TRUE)
+IQR(schools$SAT, na.rm = TRUE)
+
+```
+
+
+8.*[20 points]* By using R, 
+8.1 construct some plots  
+
+```{r }
+ggplot(schools, aes(x= as.factor(CONTROL), y = SAT)) + geom_boxplot()
+ggplot(schools, aes(x=schools$COST)) + geom_density()
+
+```
+8.2 create summary statistics table
+```{r }
+
+df1 <- summary(schools[,c(59,387,291,377)])
+print(df1)
+```
+
+8.3 correlation plots 
+```{r }
+library("Hmisc")
+library("PerformanceAnalytics")
+my_data <- as.matrix(schools[,c(59,387,291,377)])
+rcorr(my_data, type = c("pearson","spearman"))
+chart.Correlation(my_data, histogram=TRUE, pch=19)
+```
+
+8.4 highlighting the relationships among the variables in our dataset
+comment on your findings. 
+```{r }
+#According to the chart, SAT scores are very positive correlate with graduate_rate as 83% which means who can do high score on SAT also have high probability to graduate. Moreover, SAT and COST are relating to each other which mean who have high SAT have higher effort to pay tuition fee.
+```
+
+
+9.*[10 points]* Suppose that we want to understand what drives the graduation rate (graduation_rate) on the basis of the other variables in our dataset. Do your plots suggest that any of the other variables might be useful in predicting graduation_rate? Justify your answer. 
+
+```{r }
+
+#According to the results of 4 factors correlation such as SAT, graduation,enrollment and cost, SAT scores correlation with graduation rate is the highest correlation. The second  highest correlation is cost which mean this two factors are more appropriate to be the independent factors on predictive model than enrollment.
+```
+
+
+Make sure that your R codes will run. Submit this Rmarkdown file on Canvas by September the 9th. 
