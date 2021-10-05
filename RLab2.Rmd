@@ -1,0 +1,312 @@
+---
+title: "RLab2 "
+author: "Nitiphong, Nirachornkul"
+date: "9/06/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(PerformanceAnalytics)
+library(car)
+
+knitr::opts_chunk$set(echo = TRUE)
+StateData<-read.csv("StateData.csv")
+```
+
+
+
+# Background
+In this lab assignment, we will first conduct exploratory data analysis, then use multiple linear regression method to predict our variable of interest. Also, we will check the model assumptions, check for outliers and influential factors, and finally do  predictions.
+
+
+
+# Data Description
+
+We have state level census data on various socio-economic and demographic data. The data consists of the following variables:
+
+``` {r, include=TRUE}
+names(StateData)
+mydata <- as.matrix(StateData[,2:18])
+
+```
+There are `r dim(mydata)[1]` observations and `r dim(mydata)[2]` variables in the data. Some variables are presented in percentage points as a fraction of the total population. Below is a snapshot of our data.  
+
+``` {r, include=TRUE}
+knitr::kable(head(StateData))
+```
+
+
+
+Our target variable is **OwnComputer**, the percentage of people who own a computer. It may not be an interesting question, yet, in this lab assignment, we will try to find the factors that determine our target variable.  
+
+# Questions 1: Exploratory Data Analysis [15 points] 
+
+As a part of EDA, we will visually look at the relationship between our target variable *OwnComputer* and some other potential factors. 
+
+1.1 Use R to calculate the pairwise Pearson correlation coefficient between *OwnComputer* and all other state characteristics to identify the 3 variables that have the highest (in absolute value) correlation coefficient with *OwnComputer*. 
+
+
+```{r echo=FALSE, }
+# Your code goes in here
+#Your code should produce three plots
+library(Hmisc)
+library(corrplot)
+print(sum(is.na(StateData)))
+
+print("According to the correlation matrix table, the highest three correlation are SupplementarySecurityIncome, Income25K.35K and Income100K.150K")
+
+m= cor(mydata)
+
+rcorr(mydata, type = c("pearson","spearman"))
+corrplot(m)
+``` 
+
+1.2 Then, use a scatter plot to describe the relationship between *OwnComputer* and each of those three variables. Describe the general trend. Include plots and R-code used. 
+
+```{r echo=FALSE, }
+#Your code goes in here
+
+scatterplot(SupplementarySecurityIncome ~  OwnComputer, data=StateData,
+   main="Scatter Plot")
+print("The correlation between SupplementarySecurityIncome and OwnComputer is negative correlation as 65%")
+
+scatterplot(Income100K.150K ~  OwnComputer, data=StateData,
+   main="Scatter Plot")
+print("The correlation between SupplementarySecurityIncome and OwnComputer is possitive correlation as 58%")
+
+scatterplot(Income25K.35K ~  OwnComputer, data=StateData,
+   main="Scatter Plot")
+print("The correlation between SupplementarySecurityIncome and OwnComputer is negative correlation as 65%")
+
+``` 
+
+
+
+
+# Questions 2: Model Fitting [35 points] 
+
+
+Now, we will start with a parsimonious model for *OwnComputer*.
+
+2.1 Build a multiple linear regression model, called model1, shown below.${model1:~~~~~} 
+OwnComputer = \beta_{0}+\beta_{1}Asians+\beta_{2}{PovertyRate}
++\beta_{3}Income100K.150K +\epsilon$. 
+Write an R code below to use mydata to estimate model1. Display the summary of model1.
+
+```{r echo=FALSE, }
+# Your code goes in here
+plot(OwnComputer~Asians + PovertyRate+ Income100K.150K, data = StateData)
+model1<-lm(OwnComputer~Asians + PovertyRate+ Income100K.150K, data = StateData)
+fitted <- model1$fitted.values
+
+summary(model1)
+confint(model1)
+```
+
+a. Is the overall regression significant at an α level of 0.01?
+No, there are only PovertyRate and Income100K.150K are regression significant at an α level of 0.01
+
+
+b. What is the coefficient estimate for PovertyRate? Interpret this coefficient.
+
+Coefficient of PovertyRate is 0.42075.
+
+
+3. Now, we will check for an outlier in the model. Write an R command below to create a plot for the Cook’s Distances.
+
+
+```{r echo=FALSE, }
+library(olsrr)
+# Your code goes in here
+plot(cooks.distance(model1), main="Cook's D Estimates", ylab="Cook's_Distance", xlab="Observation")
+
+ols_plot_resid_stud_fit(model1)
+par(mfrow=c(2,2))
+plot(model1)
+
+```
+Using a threshold Cook’s Distance of 1, identify the row numbers of any outliers
+2nd, 29th, and 48th row
+
+4.  Now, we will remove the outlier(s) from the data set mydata and name the new dataset as *mydata1a*.  Then, we will create a new model, called model1a, using all predictors we had in model1 with OwnComputer as the dependent variable. Write an R code below to use mydata1a to estimate model1a. Display the summary of model1a.
+
+```{r echo=FALSE, }
+
+mydata1a <- mydata[-c(2,29,48),]
+mydata1a <- as.data.frame(mydata1a)
+plot(OwnComputer~Asians + PovertyRate+ Income100K.150K, data = mydata1a)
+model1a <-lm(OwnComputer~Asians + PovertyRate+ Income100K.150K, data = mydata1a)
+fitted <- model1$fitted.values
+
+summary(model1a)
+confint(model1a)
+ols_plot_resid_stud_fit(model1a)
+
+```
+
+
+a. Comment on the performance of model1 and model1a: Which model does a better job in terms of Adjusted R-square value?   
+The model1a has better Adjusted R-square value as 0.5938 than model1 as 0.4391.
+
+5. Now, we will build a greater model by adding  *Income25K.35K*, 
+*SupplementarySecurityIncome*, and *WhiteOnly*  and call it *model2*. The regression equation is shown below.
+
+${model2:}~~~ OwnComputer=\beta_{0}+\beta_{1}Asians+\beta_{2}{PovertyRate}+\beta_{3}Income100K.150K\\ +\beta_{4}Income25K.35K+\beta_{5}SupplementarySecurityIncome+\beta_{6}WhiteOnly+\epsilon$ 
+
+Write an R code below to use mydata1a (the one with outliers removed) to estimate model2. Display the summary of model2.
+
+
+```{r echo=FALSE, }
+# Your code goes in here
+# You can use  the update function to estimate model2 by updating model1a
+model2 <- update(model1a,~.+Income25K.35K+SupplementarySecurityIncome+WhiteOnly)
+summary(model2)
+
+```
+
+You can check to see that the Cook's Distance measure shows no outlier in the data.
+
+```{r echo=FALSE, }
+plot(cooks.distance(model2), main="Cook's D Estimates", ylab="Cook's_Distance", xlab="Observation")
+
+ols_plot_resid_stud_fit(model2)
+par(mfrow=c(2,2))
+plot(model2)
+
+```
+
+# Questions 3: Checking Model Assumptions  [30 points] 
+So far, we built three models: model1, model1a and model2. You will see that our largest model (model2) has the highest Adjusted-R squared value. Hence, we will test the model assumptions on model2. 
+```{r echo=FALSE, }
+summary(model1)
+summary(model1a)
+summary(model2)
+
+```
+
+
+6.  We will first create a scatterplot of the standardized residuals of model2 against each feature (predictor) in our model. This is also called component residual plot or partial residual plot. crPlots function in R can be handy to create the partial residual plots. 
+
+
+
+```{r echo=FALSE, }
+# Your code goes in here
+# check for crPlots command
+crPlots(model2) 
+
+
+```
+Based on the results, does the linearity assumption hold?
+the results are not the linearity assumption hold except income100K.150K.
+
+7.  Now, we will create a scatterplot of the standardized residuals of model2 against the fitted values of model2 to check if the constant variance assumption holds or not? 
+
+```{r echo=FALSE, }
+# Your code goes in here
+par(mfrow=c(2,2))
+plot(model2)
+```
+From the Scale-Location Plot, it is not a horizontal line with equally spread points, it has trend, so the error terms is not constant variance.
+
+Do the errors appear uncorrelated?
+yes
+
+
+
+8. This time, we will check the normality assumption with the help of  histogram and normal QQ plot for the standardized residuals.  Does the normality assumption hold?
+
+
+The model2 is right skewness. 
+```{r echo=FALSE, }
+# Your code goes in here
+# check for qqPlot and hist commands
+ 
+ggplot(model2, aes(x = .resid)) + geom_histogram()
+```
+
+
+9. Finally, we will check for multicollinearity by calculating the variance inflation factor (VIF). Calculate VIF for each predictor in model2. 
+
+Any VIF value above 10 can be considered as an evidence of multicollinearity. What conclusions you can draw from the results. 
+
+```{r echo=FALSE, }
+# Your code goes in here
+# check for vif command
+ols_vif_tol(model2)
+
+```
+The results of variance Inflation Factor(VIF) shows the significant factors are PovertyRate	as 11.947245, Income100K.150K	as 25.344017, and Income25K.35K as 16.906571 that their VIF are higher than 10.
+
+
+10.  Now,  we will build a new model and call it model3 by dropping all predictors from model2 with VIF value above 10. Write an R code below to update model2 by removing predictors with signs of multicollinearity (VIF>10).  Display the summary of model3.
+
+
+```{r echo=FALSE, }
+# Your code goes in here
+
+model3 <- update(model2,~.-PovertyRate- Income100K.150K	-Income25K.35K)
+summary(model3)
+confint(model1)
+
+```
+
+
+
+# Questions 4: Model Comparison  [5 points] 
+
+11. So far, we have created four models: model1, model1a, model2 and model3. Model2 is the largest model.  Based on Adjusted-R squared value which model performs best? 
+
+        Adjusted R-squared
+model1        0.4391 
+model1a       0.5938
+model2        0.6567 
+model3        0.3912 
+
+The model2 has the highest R-squared which mean that has the best R-squared.
+The second highest R-squared is model1a. The third highest R-squared is model1. finally, the last one is model3.
+
+We can conduct partial F test to see if a larger model makes sense, but, we will skip it for now. 
+
+
+
+
+# Questions 5: Prediction  [10 points] 
+
+12. Imagine the following scenario: Canada made a referendum to join the US as the 51st state.  
+The US happily accepted them as the 51st state. 
+Use model1, model1a, model2 and model3 to predict the *OwnComputer* ratio in Canada with a 90% prediction interval. 
+Provide an interpretation of your findings. 
+
+Which model has a narrower band?  Is there any relationship between the prediction band width and the Adjusted-R squared values?
+
+Hypothetical Data for Canada:
+
+Asians:  18.4\
+PovertyRate:  5.8\
+Income100K.150K: 23\
+Income25K.35K:  13\
+SupplementarySecurityIncome: 9\
+WhiteOnly: 75\
+
+```{r echo=FALSE, }
+# Your code goes in here
+
+Canada<-data.frame(Asians=18.4,PovertyRate=5.8,Income100K.150K=23,Income25K.35K= 13,SupplementarySecurityIncome= 9,WhiteOnly=75)
+t(Canada)
+
+predict.lm(model1,Canada,interval="predict", level=0.9)
+predict.lm(model1a,Canada,interval="predict", level=0.9)
+predict.lm(model2,Canada,interval="predict", level=0.9)
+predict.lm(model3,Canada,interval="predict", level=0.9)
+
+```
+
+The narrowest model is model2 which has interval in range between 92.69624 to 99.12279 
+
+
+
+
