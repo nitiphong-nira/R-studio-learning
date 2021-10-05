@@ -1,0 +1,533 @@
+---
+title: "Lab3"
+author: "First Name, Last Name"
+date: "9/24/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# Run this code before moving to the next one
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r, echo = FALSE}
+# Please load these packages first. 
+# Run this code before moving to the next one
+library(PerformanceAnalytics)
+library(xts)
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+library(caret)
+library(e1071)
+library(class)
+library(ggplot2)
+library(vtreat)
+```
+
+
+## Return Prediction: Brief Explanation 
+
+In Lab3, we will use the data that was discussed in Week 5 Virtual Class meeting. We have monthly excess return data on a diversified portfolio along with 5 factors that are shown in the literature to  have an impact on stock returns. Nobel Laureate Eugene Fama and Kenneth French originally introduced three factors model in their 1993 Journal of Financial Economics article. 
+Then, 2 more factors were added to the original model, called 5-factor model. 
+In this lab assignment, your task is to apply model selection techniques, knn and cross-validation methods to come up with a model that will be used to estimate stock returns in new data set and the test root mean squared error (RMSE). 
+
+
+
+- *TARGET VARIABLE:*: Excess return on a diversified portfolio and it is captured as return on a portfolio - risk free rate (return on Long-term US Government Bond returns). 
+
+- *5-Factors:*
+
+1. SIZE:Small-cap stocks tend to outperform large-cap stocks (Size is measured by stock price * shares outstanding)
+2. VALUE: Cheaper stocks (Value stocks) tend to outperform expensive (Growth) stocks  (Inexpensiveness: Book Value/Market Value, Book to Market ratio, B/M)
+- Lower the B/M, expensive the stock (Growth stocks)
+- Higher the B/M, cheap the  stock (Value Stocks)
+3. MOMENTUM: Winners outperform losers
+4. RISK (BETA): Lower the beta of a stock, higher the return performance
+5. QUALITY: Higher the profitability, higher the return performance
+
+
+## DATA DICTIONARY
+
+
+- We have 500 observations in the original data. Data spans from November 1976 till June 2018.
+- *trainingset* and *validationset* The first 400 monthly observations are kept for training and validation purposes. Monthly  data from November 1976 till February 2010 were randomly divided into two groups. You can use the *trainingset* to train alternative models and *validationset* to check your model performance. 
+
+- *testset*: The last 100 monthly observations are kept as our testing data  and it spans from March 2010 till June 2018. 
+
+
+- Target Variable
+- *Y*: Excess return on a portfolio= Portolio return - risk free rate (return on US Government bonds)
+
+
+-Factors (Predictors)
+
+1. *SMB* to capture size
+
+2. *HML* to capture Value
+
+3. *MOM* to capture Momentum
+
+4. *BAB* to capture Risk
+
+5. *QMJ* to capture Quality
+
+6. *MRP*:  A measure of average market risk premium: measures as return on a value-weighted market portfolio - risk free rate. 
+
+Run the following R chunk code before working on the questions. 
+
+
+```{r,}
+### WARNING: Do not modify the codes in here. 
+# Run this code before moving to the next one
+
+my_factors <- read.csv("factors.csv") # call the data
+my_factors$Date <- mdy(my_factors$Date) # declare the date variable
+my_factors_sorted<- my_factors[order(my_factors$Date),] # sort by date
+All_data <- xts(my_factors_sorted[,-1],order.by = my_factors_sorted[,1],)
+All_data$Y<-All_data$Brk_ret-All_data$RF  # target variable
+
+Full_data<-as.data.frame(All_data) # convert to data frame
+Fulldata = subset(Full_data, select = -c(RF,Brk_ret,Brk_exret,Subperiod, Mkt))
+# drop redundant ones
+Fulldata<-Fulldata%>%
+  rename(MRP=Mkt_rf, MOM=Mom)
+
+first400<-Fulldata[1:400,]  # use the first 400 as training and validation set
+testset<-Fulldata[401:500,]  # last 100 for the test set
+
+set.seed(5410)   # use this seed
+# shuffle the index for the testing data
+shuffle<-sample(nrow(first400), 0.25*nrow(first400))
+ # Get the training data in training set
+trainingset<-first400[-shuffle,]
+# Get the validation set in trainingf  data
+validationset<-first400[shuffle,]
+
+```
+
+
+## PART I [30 points]
+In this part, you will be totally blind to *testset* (You can't use *testset* in part I). 
+
+In Part I, your task is to build alternative linear models by using the *trainingset* as your training data and then, choose your best linear model by using the  *validationset* as your validation set. 
+
+There are 6 possible predictors (SMB, HML, MOM, BAB, QMJ, and Mkt_rf). You can whether use all predictors or a subset of them. You are free to include interaction terms or squared predictors to capture some non-linearity in the data, if there is any. At the end of the day, your job is to try alternative models to come up with your best model that you think will do a good job in predicting stock return with a new dataset. With p=6 predictors, one can build $2^6=64$ different linear models. But, you don't have to exhaust all alternative models. 
+
+You can consider using Stepwise regression to find your best model or manually try some to decide on your best model. 
+ 
+ In search of finding the best model, you can use the *validationset* to validate your model performance across different alternatives. 
+
+In other words, after estimating model parameters by using the *trainingset*, you can fit each of your model to the *validationset*, calculate RMSE  (loss function), and choose the one with the lowest RMSE as your best model.
+ One purpose of this practice is to show the challenges you face when you decide on your best model.  Without having access to new data, you will have to balance flexibility with simplicity. 
+
+
+```{r, echo = TRUE}
+
+library(broom)
+# Run this code before moving to the next one
+# (a) TRAINING [10 points]:  Write your codes below that will use the trainingset to build alternative (contestant) models. Whether write your models manually or with Step function in R. 
+model1<-(Y~MRP+SMB)
+model2<-(Y~MRP+SMB+HML)
+model3<-(Y~MRP+SMB+HML+MOM)
+model4<-(Y~MRP+SMB+HML+MOM+BAB)
+model5<-(Y~MRP+SMB+HML+MOM+BAB+QMJ)
+
+
+summary_linear <- function(a) 
+  {
+  print(c(glance(a)$r.squared, (sqrt(sum(residuals(a)^2) / df.residual(a)))))
+}
+print('The results of linear')
+print(c('R-squared ',' RMSE'))
+summary_linear(linear1 <- lm(model1,data = trainingset))
+summary_linear(linear2 <- lm(model2,data = trainingset))
+summary_linear(linear3 <- lm(model3,data = trainingset))
+summary_linear(linear4 <- lm(model4,data = trainingset))
+summary_linear(linear5 <- lm(model5,data = trainingset))
+
+# (b) VALIDATION [10 points]: Write your codes below that will take each contestant model and  calculate the fitted values and RMSE for validationset. 
+
+summary_CV_linear <- function(a) 
+  {
+  ctrl <- trainControl(method = "cv", number = 10)
+  #fit a regression model and use k-fold CV to evaluate performance
+  b <- train(a, data = trainingset, method = "lm", trControl = ctrl)
+  print(c(b$results$RMSE, b$results$Rsquared))
+  
+}
+print('')
+print('The results of linear Crossvalidation')
+print(c('RMSE','R-squared'))
+summary_CV_linear(model1)
+summary_CV_linear(model2)
+summary_CV_linear(model3)
+summary_CV_linear(model4)
+summary_CV_linear(model5)
+
+  
+# (c) MODEL SELECTION [10 points]:  Write  your codes below that will choose your champion linear model amongst alternatives, the one that produces the lowest RMSE on the validationset. 
+#Write down which features are included in  your champion linear model and what is the the calculated RMSE on validationset.
+
+print("The best model is the fifth model with Rsquared : 0.24928 and RMSE : 0.06507")
+print("The validation of the fifth model has Rsquared : 0.23452125 and RMSE : 0.06465872 ")
+print("when do the cross-validation the second RMSE and Rsquared model are better as 0.06565044 and 0.26518272")
+
+```
+
+## PART II: KNN Regression [20 points]
+In this part, you will be totally blind to *testset* (You can't use *testset* in part II). 
+In Part II, by using the *caret* package in R, your task is to fit the following five models to the first400 dataset by using K-nearest neighbors regression (KNN regression) method to find the right value of k for each model. 
+
+- $model1: Y=\beta_{0}+\beta_{1}MRP+\beta_{2}SMB+\epsilon$
+- $model2: Y=\beta_{0}+\beta_{1}MRP+\beta_{2}SMB+\beta_{3}HML+\epsilon$
+- $model3: Y=\beta_{0}+\beta_{1}MRP+\beta_{2}SMB+\beta_{3}HML+\beta_{4}MOM+\epsilon$
+- $model4: Y=\beta_{0}+\beta_{1}MRP+\beta_{2}SMB+\beta_{3}HML+\beta_{4}MOM+\beta_{5}BAB+\epsilon$
+
+- $model5: Y=\beta_{0}+\beta_{1}MRP+\beta_{2}SMB+\beta_{3}HML+\beta_{4}MOM+\beta_{5}BAB+\beta_{6}QMJ+\epsilon$
+
+
+Below, we used the caret package to use the training and validation data set (first400 with 400 observations) to calculate the expected test RMSE by taking the average of RMSE from 5 validation sets.  
+
+400 observations in our training and validation dataset are divided into 5-equal sized folds and each time, one fold is reserved as validation set and the remaining 4 as the training set, under alternative values of k from 1 to 50, target variables are being estimated by the averages of k nearest neighbors in the training folds. 
+
+As shown below, when k=19 (knn_model1$bestTune), RMSE will be at the minimum. 
+
+train function in caret will iterate all k's and select the optimal model using the smallest RMSE value. 
+
+When you want to fit the best model to a new dataset, you just need to use knn_model1_predict <- knn_model1 %>% predict(newdata)   
+
+
+```{r, echo = TRUE}
+# Models: Do not run the following  5 lines
+#model1<-lm(Y~MRP+SMB)
+#model2<-lm(Y~MRP+SMB+HML)
+#model3<-lm(Y~MRP+SMB+HML+MOM)
+#model4<-lm(Y~MRP+SMB+HML+MOM+BAB)
+#model5<-lm(Y~MRP+SMB+HML+MOM+BAB+QMJ)
+
+# The optimal k for model 1 is calculated below
+set.seed(5410)
+
+knn_model1= train(
+  Y ~ MRP+SMB,
+  data = first400,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = expand.grid(k = seq(1, 50, by = 2))
+)
+
+train_control<- trainControl(method="cv", number=10, savePredictions = TRUE)
+
+
+#knn_model1$results  # show the results
+print(knn_model1)
+
+
+# (a)[4 points] Write your code below to produce the optimal k for model 2 and the corresponding RMSE  with first400 data
+set.seed(5410)
+knn_model2= train(
+  Y~MRP+SMB+HML,
+  data = first400,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = expand.grid(k = seq(1, 50, by = 2))
+)
+
+train_control<- trainControl(method="cv", number=10, savePredictions = TRUE)
+
+
+#knn_model1$results  # show the results
+print(knn_model2)
+
+
+# (b)[4 points] Write your code below to produce the optimal k for model 3 and the corresponding RMSE with first400 data
+set.seed(5410)
+knn_model3= train(
+  Y~MRP+SMB+HML+MOM,
+  data = first400,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = expand.grid(k = seq(1, 50, by = 2))
+)
+
+train_control<- trainControl(method="cv", number=10, savePredictions = TRUE)
+
+
+#knn_model1$results  # show the results
+print(knn_model3)
+
+
+
+# (c)[4 points] Write your code below to produce the optimal k for model 4 and the corresponding RMSE with first400 data
+set.seed(5410)
+
+knn_model4= train(
+  Y~MRP+SMB+HML+MOM+BAB,
+  data = first400,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = expand.grid(k = seq(1, 50, by = 2))
+)
+
+train_control<- trainControl(method="cv", number=10, savePredictions = TRUE)
+
+
+#knn_model1$results  # show the results
+print(knn_model4)
+
+# (d)[4 points] Write your code below to produce the optimal k for model 5 and the corresponding RMSE  with first400 data
+set.seed(5410)
+knn_model5= train(
+  Y~MRP+SMB+HML+MOM+BAB+QMJ,
+  data = first400,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = expand.grid(k = seq(1, 50, by = 2))
+)
+
+train_control<- trainControl(method="cv", number=10, savePredictions = TRUE)
+
+
+#knn_model1$results  # show the results
+print(knn_model5)
+# (e) MODEL SELECTION [4 points] : Which knn model is your champion model? (i.e. model 1 with k=2 and RMSE=0.12345678).
+
+#model1 RMSE = 0.06616553 with k = 19 and Rsquared = 0.18527731
+#model2 RMSE = 0.06583459 with k = 39 and Rsquared = 0.20441852
+#model3 RMSE = 0.06649838 with k = 33 and Rsquared = 0.17758308 
+#model4 RMSE = 0.06653314 with k = 21 and Rsquared = 0.16526708
+#model5 RMSE = 0.06662365 with k = 21 and Rsquared = 0.16784851
+
+#The best model is model2 with k = 39, RMSE 0.06583459 and Rsquared = 0.20441852
+
+# If you were to choose between champion linear model and champion knn model, which one you would choose and why?
+
+#I will choose the champion of linear model because the results of linear K fold = 9 with RMSE : 0.06422342 and Rsquared : 0.2300961 is better than the champion of knn as model2 with k = 39, RMSE 0.06583459 and Rsquared = 0.20441852.
+#RMSE (error) of linear is less than knn and stabilization of linear model (Rsquared) is more than knn. 
+```
+## PART III:  CROSS VALIDATION  [30 points]
+In this part, you will be totally blind to *testset* (You can't use *testset* in part III). 
+
+#[A] Leave-one-out Cross Validation (LOOCV)[10 points]
+
+Below, we used the caret package to use the training and validation data set (first400 with 400 observations) for model1 in Section II to calculate the expected test RMSE by taking the average of RMSE from 400 validation points via LOOCV method. Each time, all but one observation were held out as the taining set to train the model to build a model to predict the left-out observation and repeat the process for each obervation .   
+
+
+```{r, echo = TRUE}
+#Models: Do not run the following  5 lines
+#model1<-lm(Y~MRP+SMB)
+#model2<-lm(Y~MRP+SMB+HML)
+#model3<-lm(Y~MRP+SMB+HML+MOM)
+#model4<-lm(Y~MRP+SMB+HML+MOM+BAB)
+#model5<-lm(Y~MRP+SMB+HML+MOM+BAB+QMJ)
+
+control_partIII <- trainControl(method = "LOOCV")
+
+LOOCV_model1<-train(Y ~ MRP+SMB, data = first400, method = "lm", trControl = control_partIII)
+
+
+# (a)[2 points] Write your code below to calculate the RMSE  for model 2 based on LOOCV method used on first400
+
+LOOCV_model2<-train(Y ~ MRP+SMB+HML, data = first400, method = "lm", trControl = control_partIII)
+
+
+# (b)[2 points] Write your code below to calculate the RMSE  for model 3 based on LOOCV method used on first400
+
+LOOCV_model3<-train(Y ~ MRP+SMB+HML+MOM, data = first400, method = "lm", trControl = control_partIII)
+
+# (c)[2 points] Write your code below to calculate the RMSE  for model 4 based on LOOCV method used on first400
+
+LOOCV_model4<-train(Y ~ MRP+SMB+HML+MOM+BAB, data = first400, method = "lm", trControl = control_partIII)
+
+
+# (d)[2 points] Write your code below to calculate the RMSE  for model 5 based on LOOCV method used on first400
+
+LOOCV_model5<-train(Y ~ MRP+SMB+HML+MOM+BAB+QMJ, data = first400, method = "lm", trControl = control_partIII)
+
+print(as.list(LOOCV_model1))
+print(as.list(LOOCV_model2))
+print(as.list(LOOCV_model3))
+print(as.list(LOOCV_model4))
+print(as.list(LOOCV_model5))
+
+# (e) MODEL SELECTION [2 points] : Which model is your champion model based on LOOCV method? (i.e. model X with an RMSE value of 0.1234567). 
+#            RMSE        Rsquared   MAE
+#model1      0.06436343  0.2108626  0.04796016
+#model2      0.0628834   0.2467509  0.04748472
+#model3      0.06290058  0.2464281  0.04759902
+#model4      0.06210175  0.2655216  0.04631859
+#model5      0.0617991   0.2727548  0.04572569
+
+# model5 is the champion model with RMSE = 0.0617991 and Rsquared = 0.2727548
+
+# If you were to choose between champion linear model, the champion knn model, or the champion LOOCV model, which one you would choose and why?
+# champion LOOCV model has RMSE = 0.0617991 and Rsquared = 0.2727548
+#champion linear model has RMSE = 0.0642234 and Rsquared = 0.2300961 
+#  champion KNN  model has RMSE = 0.0658346 and Rsquared = 0.20441852.
+#I will choose a champion LOOCV model becaues this model has lowest RMSE and higest Rsquared. However, if the dataset was too large to compute, I would choose linear because the linear model run easier than LOOCV.
+
+```
+
+#[B] K-fold Cross Validation (k-fold CV)[20 points]
+
+In this subsection, you will use the caret package and by using the training and validation data set (first400) for models 1 through 5, you will calculate the average RMSE in validations set for model checking purposes. The average RMSE is calculated by taking the average of RMSE from each fold with K-fold cross validation  for k=5, 10, and 15.   
+
+
+```{r, echo = TRUE}
+# Models: Do not run the following  5 lines
+#model1<-lm(Y~MRP+SMB)
+#model2<-lm(Y~MRP+SMB+HML)
+#model3<-lm(Y~MRP+SMB+HML+MOM)
+#model4<-lm(Y~MRP+SMB+HML+MOM+BAB)
+#model5<-lm(Y~MRP+SMB+HML+MOM+BAB+QMJ)
+
+# (a)5-fold cross validation [5 points]
+
+# By using caret package, use the  first400 dataset to find the model that produces the lowest RMSE  based on 5-fold cross validation. Indicate the model name and the corresponding RMSE value.  (i.e. the champion model based on  5-fold cross validation is model X with an RMSE value of 0.1234567), You do not have to insert all codes in here, only insert the one that will give you the champion model. 
+set.seed(5410)
+ctrl <- trainControl(method = "cv", number = 5)
+#fit a regression model and use k-fold CV to evaluate performance
+
+K_fold_5_model1 <- train(Y ~  MOM+MRP, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_5_model2 <- train(Y ~  MOM+MRP+SMB, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_5_model3 <- train(Y ~  MOM+MRP+SMB+HML, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_5_model4 <- train(Y ~  MOM+MRP+SMB+HML+QMJ, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_5_model5 <- train(Y ~  MOM+MRP+SMB+HML+QMJ+BAB, data = trainingset, method = "lm", trControl = ctrl)
+
+
+
+
+# (b) 10-fold cross validation [5 points]
+
+# By using caret package, use the  first400 dataset to find the model that produces the lowest RMSE  based on 10-fold cross validation. Indicate the model name and the corresponding RMSE value.  (i.e. the champion model based on  10-fold cross validation is model X with an RMSE value of 0.1234567), You do not have to insert all codes in here, only insert the one that will give you the champion model. 
+set.seed(5410)
+
+ctrl <- trainControl(method = "cv", number = 10)
+#fit a regression model and use k-fold CV to evaluate performance
+
+K_fold_10_model1 <- train(Y ~  MOM+MRP, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_10_model2 <- train(Y ~  MOM+MRP+SMB, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_10_model3 <- train(Y ~  MOM+MRP+SMB+HML, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_10_model4 <- train(Y ~  MOM+MRP+SMB+HML+QMJ, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_10_model5 <- train(Y ~  MOM+MRP+SMB+HML+QMJ+BAB, data = trainingset, method = "lm", trControl = ctrl)
+
+
+# (c) 15-fold cross validation [5 points]
+
+# By using caret package, use the  first400 dataset to find the model that produces the lowest RMSE  based on 15-fold cross validation. Indicate the model name and the corresponding RMSE value.  (i.e. the champion model based on  15-fold cross validation is model X with an RMSE value of 0.1234567), You do not have to insert all codes in here, only insert the one that will give you the champion model. 
+set.seed(5410)
+
+ctrl <- trainControl(method = "cv", number = 15)
+#fit a regression model and use k-fold CV to evaluate performance
+
+K_fold_15_model1 <- train(Y ~  MOM+MRP, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_15_model2 <- train(Y ~  MOM+MRP+SMB, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_15_model3 <- train(Y ~  MOM+MRP+SMB+HML, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_15_model4 <- train(Y ~  MOM+MRP+SMB+HML+QMJ, data = trainingset, method = "lm", trControl = ctrl)
+
+K_fold_15_model5 <- train(Y ~  MOM+MRP+SMB+HML+QMJ+BAB, data = trainingset, method = "lm", trControl = ctrl)
+
+
+# (d) MODEL SELECTION [5 points] : Which model is your champion model based on k-fold cross validation method? (i.e. model X with Y-fold cross validation with an RMSE value of 0.1234567). 
+print(K_fold_5_model1)
+print(K_fold_5_model2)
+print(K_fold_5_model3)
+print(K_fold_5_model4)
+print(K_fold_5_model5)
+print(K_fold_10_model1)
+print(K_fold_10_model2)
+print(K_fold_10_model3)
+print(K_fold_10_model4)
+print(K_fold_10_model5)
+print(K_fold_15_model1)
+print(K_fold_15_model2)
+print(K_fold_15_model3)
+print(K_fold_15_model4)
+print(K_fold_15_model5)
+
+# print(K_fold_10_model4) is the best model with RMSE = 0.0653987 and Rsquared = 0.2650635
+
+# If you were to choose between champion linear model, the champion knn model, the champion LOOCV model,  or the champion k-fold cross validation model as your MEGA CHAMPION which one you would choose and why? [Side Note: This lab may give you the impression that we do our best prediction with cross-validation by deciding on our champion model. Instead, we do model checking with cross-validation. In other words, the MEGA Champion is better at predicting the test RMSE. But, for us to have our best estimate of test RMSE, we need to fit the whole data set to the champion model to come up with our best estimate of test RMSE.]
+
+
+
+
+
+
+
+```
+
+## PART IV: Fights of the champion Models with test data (Prediction with new data)  [20 points]
+
+
+ In the final section,  you will use the last 100 observations (*testset*) and write and R code below to predict the RMSE based on the following models whose parameters were estimated in Sections I-III:
+ 
+- The champion linear model: 5th model
+- The champion knn model: 2nd model
+- The champion LOOCV model: 5th model
+- The champion k-fold cross validation model: 4th model of 10 fold
+
+```{r, echo = TRUE}
+# Run this code before moving to the next one
+
+c<- testset$Y
+
+compare_function <- function(b,c) 
+  {
+    RMSE(b,c)
+  }
+
+#(a)[4 points] Write an R code below that will fit testset data on the  champion linear model that is found in Section I to measure RMSE in testset. 
+linear_predict <- predict(linear5, newdata = testset)
+knn_predict <- predict(knn_model2, newdata = testset)
+LOOCV_predict <- predict(LOOCV_model5, newdata = testset)
+k_fold_predict <- predict(K_fold_10_model4, newdata = testset)
+
+print(c('RMSE of the best linear model = ',compare_function(linear_predict,c)))
+
+#(b)[4 points] Write an R code below that will fit testset data on the  champion knn model that is found in Section II to measure RMSE in testset.
+
+print(c('RMSE of the best knn model = ', compare_function(knn_predict,c)))
+        
+#(c)[4 points] Write an R code below that will fit testset data on the  champion LOOCV model that is found in Section III part A to measure RMSE in testset.
+
+
+print(c('RMSE of the best LOOCV model = ',compare_function(LOOCV_predict,c)))
+
+#(d)[4 points] Write an R code below that will fit testset data on the  champion k-fold model that is found in Section III part B to measure RMSE in testset.
+
+
+print(c('RMSE of the best k-fold model = ',compare_function(k_fold_predict,c)))
+
+
+
+#(e)[4 points] Comment on your findings. 
+#The RMSE of LOOCV_predict model is the smallest number, which shows that the LOOCV_predict model is the best model when used the testing dataset to test a model which has RMSE as 0.0355792634807469.
+
+# "RMSE of the best linear model = " "0.0361382850859064"              
+# "RMSE of the best knn model = " "0.0376670841828111"           
+# "RMSE of the best LOOCV model = " "0.0355792634807469"             
+# "RMSE of the best k-fold model = " "0.0365870337836523"  
+
+```
+
+
+
+
