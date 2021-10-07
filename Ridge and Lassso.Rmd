@@ -1,0 +1,266 @@
+---
+title: "Module 4 Ridge and LASSO"
+author: "LB"
+date: "10/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data 
+
+Carseat data in ISLR2 book
+400 observation, 11 variables
+Sales
+Unit sales (in thousands) at each location
+
+CompPrice
+Price charged by competitor at each location
+
+Income
+Community income level (in thousands of dollars)
+
+Advertising
+Local advertising budget for company at each location (in thousands of dollars)
+
+Population
+Population size in region (in thousands)
+
+Price
+Price company charges for car seats at each site
+
+ShelveLoc
+A factor with levels Bad, Good and Medium indicating the quality of the shelving location for the car seats at each site
+
+Age
+Average age of the local population
+
+Education
+Education level at each location
+
+Urban
+A factor with levels No and Yes to indicate whether the store is in an urban or rural location
+
+US
+A factor with levels No and Yes to indicate whether the store is in the US or not
+
+Note: I will drop all factor variables and only deal with 7 features
+
+
+```{r }
+# data package
+library(ISLR2)
+
+
+```
+
+## Data
+
+
+
+```{r , echo=FALSE}
+# call the data
+Carseatdata<-ISLR2::Carseats
+Carseatdata<-Carseatdata[,-c(7, 10, 11)]
+
+
+# Split the data into training and testing
+set.seed(5410)
+shuffleid = sample(nrow(Carseatdata), 0.2 * nrow(Carseatdata))
+testData = Carseatdata[shuffleid, ]
+trainData = Carseatdata[-shuffleid, ]
+
+
+# Full Model in the training set with all predictors
+fullmodel<-lm(Sales~.,data=trainData)
+summary(fullmodel)
+
+```
+
+
+
+```{r , echo=FALSE}
+# Get the regression results
+summary(fullmodel)$coefficients
+
+#Get the  p valuse
+summary(fullmodel)$coefficients[,4]
+
+# Get the coefficients wit p values less than 0.01
+
+names(which(summary(fullmodel)$coefficients[,4]<.01))
+
+```
+
+## Regression Output
+
+For the full model, let's calculate the mean-squared prediction error, the adjusted $R^2$ values.
+
+```{r , echo=FALSE}
+MSPE_fullmodel=mean(fullmodel$residuals^2)
+
+RSquared_Adf_fullmodel<-summary(fullmodel)$adj.r.squared
+
+
+```
+
+## BEST SUBSET
+ p=7, how many different models we can build?
+ 
+ 
+ 2^7= 128
+ 
+ 
+Let's create all possible subsets and choose Adjusted-R square as our criteria to select the best model. 
+
+- Look for cases where we have only one predictor (k=1)
+- Look for cases where we have only two predictors (k=2)
+...
+- Look for cases where we have only ten predictors (k=7)
+ 
+ 
+ 
+ 
+```{r , echo=FALSE}
+ library(leaps)
+ # Use this library for best subset selection
+ names(trainData)
+ # Get the column names for predictors
+ columnnames<-names(trainData)[-1]
+ 
+bestsubsets_fullR2<-leaps(trainData[,-1], trainData$Sales, method = "adjr2", nbest=1, names = columnnames)
+
+# Put them all in a table 
+
+table_bestsubset<-cbind(as.matrix(bestsubsets_fullR2$which),bestsubsets_fullR2$adjr2)
+
+# Choose your best model by the one with the highest R squares value
+# Find  which row has the highest Adjusted R squares value
+bestmodeladjr2 = which(bestsubsets_fullR2$adjr2==max(bestsubsets_fullR2$adjr2))
+# Extract the coefficients of the best model
+best.adjr2 = cbind(as.matrix(bestsubsets_fullR2$which),bestsubsets_fullR2$adjr2)[bestmodeladjr2,]
+
+
+best.adjr2
+
+```
+
+
+
+## Run the best subset 
+
+Run the best subset and calculate  Mallow's Cp, AIC, BIC criterion values for the best subset. 
+
+
+We can use CombMSC package
+
+
+```{r , echo=FALSE}
+library(CombMSC)
+# best subset  CompPrice,  Income, Advertising, Price, Age Education
+
+bestsubset<-lm(lm(Sales~CompPrice + Income + Advertising + Price+ Age + Education,data=trainData))
+
+
+# Calculate MSPE, Adjusted R square, Mallow's Cp, AIC, BIC criterion values for the best subset
+
+
+MSPE_bestsubset=mean(bestsubset$residuals^2)
+ADJR2_bestsubset=summary(bestsubset)$adj.r.squared
+Mallow_bestsubset = Cp(bestsubset,S2=summary(fullmodel)$sigma^2)
+AIC_bestsubset = AIC(bestsubset,k=2)
+BIC_bestsubset = AIC(bestsubset,k=log(length(trainData)))
+
+```
+
+## Ridge Regression
+
+We will use MASS package
+
+
+
+```{r , echo=FALSE}
+
+library(MASS)
+Y = trainData$Sales
+predictors = trainData[,-1]
+#Scale the variables
+predictors_scaled = scale(predictors)
+Y_scaled = scale(Y)
+
+
+# Range of lambda
+lambda = seq(0, 10, by=0.05)
+Ridge_out = lm.ridge(Y_scaled~predictors_scaled, lambda=lambda)
+summary(Ridge_out)
+
+best<-which(Ridge_out$GCV == min(Ridge_out$GCV))
+Ridge_out$coef[,best]
+```
+
+
+
+
+## Use a glmnet package for Ridge
+
+With glmnet no need to scake variables, 
+WE will do cross validation to find the best lambda
+
+
+
+```{r , echo=FALSE}
+
+library(glmnet)
+
+## Find the optimal lambda using 10-fold CV 
+Ridge.cv = cv.glmnet(as.matrix(predictors), Y, alpha=0, nfolds=10)
+
+coef(Ridge.cv, s=Ridge.cv$lambda.min)
+
+
+
+
+```
+
+
+## Use a glmnet package for LASSO
+
+With glmnet no need to scake variables, 
+WE will do cross validation to find the best lambda
+
+
+
+```{r , echo=FALSE}
+
+library(glmnet)
+
+## Find the optimal lambda using 10-fold CV 
+Lasso.cv = cv.glmnet(as.matrix(predictors), Y, alpha=1, nfolds=10)
+
+coef(Lasso.cv, s=Lasso.cv$lambda.min)
+
+```
+
+
+## Use a glmnet package for Elastic Net
+
+With glmnet no need to scake variables, 
+WE will do cross validation to find the best lambda
+
+
+
+```{r , echo=FALSE}
+
+library(glmnet)
+
+## Find the optimal lambda using 10-fold CV 
+Elastic.cv = cv.glmnet(as.matrix(predictors), Y, alpha=0.5, nfolds=10)
+
+coef(Elastic.cv, s=Elastic.cv$lambda.min)
+
+```
+
+
+
